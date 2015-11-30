@@ -119,6 +119,10 @@ module Adyen
         parameters[:billing_address_sig] = calculate_billing_address_signature(parameters, shared_secret)
       end
 
+      if parameters[:delivery_address]
+        parameters[:delivery_address_sig] = calculate_delivery_address_signature(parameters, shared_secret)
+      end
+
       if parameters[:shopper]
         parameters[:shopper_sig] = calculate_shopper_signature(parameters, shared_secret)
       end
@@ -165,6 +169,20 @@ module Adyen
     # @return [String] An absolute URL to redirect to the Adyen payment system.
     def redirect_url(parameters = {})
       url + '?' + flat_payment_parameters(parameters).map { |(k, v)|
+        "#{k}=#{CGI.escape(v)}"
+      }.join('&')
+    end
+
+    # @see Adyen::Form.redirect_url
+    #
+    # Returns an absolute URL very similar to the one returned by Adyen::Form.redirect_url
+    # except that it uses the directory.shtml call which returns a list of all available
+    # payment methods
+    #
+    # @param [Hash] parameters The payment parameters to include in the payment request.
+    # @return [String] An absolute URL to redirect to the Adyen payment system.
+    def payment_methods_url(parameters = {})
+      url(nil, :directory) + '?' + flat_payment_parameters(parameters).map { |(k, v)|
         "#{k}=#{CGI.escape(v)}"
       }.join('&')
     end
@@ -268,6 +286,36 @@ module Adyen
       shared_secret ||= parameters.delete(:shared_secret)
       raise ArgumentError, "Cannot calculate billing address request signature with empty shared_secret" if shared_secret.to_s.empty?
       Adyen::Encoding.hmac_base64(shared_secret, calculate_billing_address_signature_string(parameters[:billing_address]))
+    end
+
+    # Generates the string that is used to calculate the request signature. This signature
+    # is used by Adyen to check whether the request is genuinely originating from you.
+    # @param [Hash] parameters The parameters that will be included in the delivery address request.
+    # @return [String] The string for which the siganture is calculated.
+    def calculate_delivery_address_signature_string(parameters)
+      %w(street house_number_or_name city postal_code state_or_province country).map do |key|
+        parameters[key.to_sym]
+      end.join
+    end
+
+    # Calculates the delivery address request signature for the given delivery address parameters.
+    #
+    # This signature is used by Adyen to check whether the request is
+    # genuinely originating from you. The resulting signature should be
+    # included in the delivery address request parameters as the +deliveryAddressSig+
+    # parameter; the shared secret should of course not be included.
+    #
+    # @param [Hash] parameters The delivery address parameters for which to calculate
+    #    the delivery address request signature.
+    # @param [String] shared_secret The shared secret to use for this signature.
+    #    It should correspond with the skin_code parameter. This parameter can be
+    #    left out if the shared_secret is included as key in the parameters.
+    # @return [String] The signature of the delivery address request
+    # @raise [ArgumentError] Thrown if shared_secret is empty
+    def calculate_delivery_address_signature(parameters, shared_secret = nil)
+      shared_secret ||= parameters.delete(:shared_secret)
+      raise ArgumentError, "Cannot calculate delivery address request signature with empty shared_secret" if shared_secret.to_s.empty?
+      Adyen::Encoding.hmac_base64(shared_secret, calculate_delivery_address_signature_string(parameters[:delivery_address]))
     end
 
     # shopperSig: shopper.firstName + shopper.infix + shopper.lastName + shopper.gender + shopper.dateOfBirthDayOfMonth + shopper.dateOfBirthMonth + shopper.dateOfBirthYear + shopper.telephoneNumber
